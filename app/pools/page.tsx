@@ -1,28 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useWallet } from "@/components/WalletProvider";
+import Sparkline from "@/components/Sparkline";
+import { type PoolInfo, xrp, age } from "@/lib/pool-ui";
 
-type PoolInfo = {
-  launchId: string;
-  ticker: string;
-  currencyHex: string;
-  issuerAddress: string;
-  exists: boolean;
-  ammAccount?: string;
-  tokenBalance?: string;
-  xrpBalance?: string;
-  lpToken?: { currency: string; issuer: string; value: string };
-  tradingFee?: number;
-};
-
-function formatNum(v: string | undefined): string {
-  if (!v) return "0";
-  const n = parseFloat(v);
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  if (n >= 1) return n.toFixed(2);
-  return n.toFixed(6);
+function PctChange({ pct }: { pct: number | null }) {
+  if (pct === null) return null;
+  const positive = pct >= 0;
+  return (
+    <span className={`text-[10px] ${positive ? "text-mint" : "text-red-400"}`}>
+      {positive ? "+" : ""}
+      {pct.toFixed(2)}%
+    </span>
+  );
 }
 
 export default function PoolsPage() {
@@ -38,20 +30,6 @@ export default function PoolsPage() {
   const [createBusy, setCreateBusy] = useState(false);
   const [createResult, setCreateResult] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
-
-  const [depositPool, setDepositPool] = useState<string | null>(null);
-  const [depositTokenAmt, setDepositTokenAmt] = useState("");
-  const [depositXrpAmt, setDepositXrpAmt] = useState("");
-  const [depositBusy, setDepositBusy] = useState(false);
-  const [depositResult, setDepositResult] = useState<string | null>(null);
-  const [depositError, setDepositError] = useState<string | null>(null);
-
-  const [withdrawPool, setWithdrawPool] = useState<string | null>(null);
-  const [withdrawTokenAmt, setWithdrawTokenAmt] = useState("");
-  const [withdrawXrpAmt, setWithdrawXrpAmt] = useState("");
-  const [withdrawBusy, setWithdrawBusy] = useState(false);
-  const [withdrawResult, setWithdrawResult] = useState<string | null>(null);
-  const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
   function fetchPools() {
     setLoading(true);
@@ -70,6 +48,16 @@ export default function PoolsPage() {
 
   const activePools = pools.filter((p) => p.exists);
   const availableTokens = pools.filter((p) => !p.exists);
+
+  const totalTvl = activePools.reduce((s, p) => s + (p.tvlDrops ?? 0), 0);
+  const totalVol = activePools.reduce(
+    (s, p) => s + (p.stats?.volume24hDrops ?? 0),
+    0
+  );
+  const totalFees = activePools.reduce(
+    (s, p) => s + (p.stats?.fees24hDrops ?? 0),
+    0
+  );
 
   async function handleCreate() {
     if (!userId || createBusy) return;
@@ -112,84 +100,6 @@ export default function PoolsPage() {
     }
   }
 
-  async function handleDeposit(launchId: string) {
-    if (!userId || depositBusy) return;
-    const tokenAmt = parseFloat(depositTokenAmt);
-    const xrpAmt = parseFloat(depositXrpAmt);
-    if (!tokenAmt || !xrpAmt) return;
-
-    setDepositBusy(true);
-    setDepositError(null);
-    setDepositResult(null);
-    try {
-      const devSecret = localStorage.getItem("tl_dev_secret") ?? "";
-      const res = await fetch("/api/pools/deposit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          launchId,
-          tokenAmount: tokenAmt,
-          xrpAmount: xrpAmt,
-          devSecret,
-        }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setDepositResult(json.data.depositTx);
-        setDepositPool(null);
-        setDepositTokenAmt("");
-        setDepositXrpAmt("");
-        fetchPools();
-      } else {
-        setDepositError(json.error ?? "deposit failed");
-      }
-    } catch {
-      setDepositError("network error");
-    } finally {
-      setDepositBusy(false);
-    }
-  }
-
-  async function handleWithdraw(launchId: string) {
-    if (!userId || withdrawBusy) return;
-    const tokenAmt = parseFloat(withdrawTokenAmt);
-    const xrpAmt = parseFloat(withdrawXrpAmt);
-    if (!tokenAmt || !xrpAmt) return;
-
-    setWithdrawBusy(true);
-    setWithdrawError(null);
-    setWithdrawResult(null);
-    try {
-      const devSecret = localStorage.getItem("tl_dev_secret") ?? "";
-      const res = await fetch("/api/pools/withdraw", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          launchId,
-          tokenAmount: tokenAmt,
-          xrpAmount: xrpAmt,
-          devSecret,
-        }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setWithdrawResult(json.data.withdrawTx);
-        setWithdrawPool(null);
-        setWithdrawTokenAmt("");
-        setWithdrawXrpAmt("");
-        fetchPools();
-      } else {
-        setWithdrawError(json.error ?? "withdraw failed");
-      }
-    } catch {
-      setWithdrawError("network error");
-    } finally {
-      setWithdrawBusy(false);
-    }
-  }
-
   return (
     <div className="flex flex-col gap-5 py-8">
       <header className="flex items-center justify-between">
@@ -209,21 +119,26 @@ export default function PoolsPage() {
         )}
       </header>
 
+      {/* Global stats bar */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { label: "total value locked", value: `${xrp(totalTvl)} xrp` },
+          { label: "24h volume", value: `${xrp(totalVol)} xrp` },
+          { label: "24h fees", value: `${xrp(totalFees)} xrp` },
+        ].map((s) => (
+          <div
+            key={s.label}
+            className="rounded-lg bg-card border border-white/5 p-3 text-center"
+          >
+            <p className="text-sm font-bold text-mint">{s.value}</p>
+            <p className="text-[10px] text-muted">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
       {createResult && (
         <div className="rounded-lg bg-mint/10 border border-mint/20 p-3 text-sm text-mint">
           pool created — tx: {createResult.slice(0, 12)}...
-        </div>
-      )}
-
-      {depositResult && (
-        <div className="rounded-lg bg-mint/10 border border-mint/20 p-3 text-sm text-mint">
-          liquidity added — tx: {depositResult.slice(0, 12)}...
-        </div>
-      )}
-
-      {withdrawResult && (
-        <div className="rounded-lg bg-mint/10 border border-mint/20 p-3 text-sm text-mint">
-          liquidity removed — tx: {withdrawResult.slice(0, 12)}...
         </div>
       )}
 
@@ -321,10 +236,15 @@ export default function PoolsPage() {
         </div>
       )}
 
-      {/* Active pools */}
-      <h2 className="text-sm font-semibold text-muted">
-        active pools ({activePools.length})
-      </h2>
+      {/* Pool table */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-muted">
+          active pools ({activePools.length})
+        </h2>
+        <span className="hidden sm:block text-[10px] text-muted/60">
+          sorted by tvl
+        </span>
+      </div>
 
       {loading && (
         <p className="text-xs text-muted text-center py-4">
@@ -342,167 +262,73 @@ export default function PoolsPage() {
       )}
 
       <div className="flex flex-col gap-2">
-        {activePools.map((pool) => (
-          <div
-            key={pool.launchId}
-            className="rounded-lg bg-card border border-white/5 p-4 flex flex-col gap-3"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-foreground">
-                {pool.ticker} / XRP
-              </p>
-              {pool.tradingFee !== undefined && (
-                <span className="text-xs text-mint font-medium">
-                  {(pool.tradingFee / 1000).toFixed(2)}% fee
-                </span>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <span className="text-muted">token: </span>
-                <span className="text-foreground">
-                  {formatNum(pool.tokenBalance)}
-                </span>
+        {[...activePools]
+          .sort((a, b) => (b.tvlDrops ?? 0) - (a.tvlDrops ?? 0))
+          .map((pool) => (
+            <Link
+              key={pool.launchId}
+              href={`/pools/${pool.launchId}`}
+              className="rounded-lg bg-card border border-white/5 p-4 flex flex-col gap-3 hover:border-mint/30 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    {pool.ticker} / XRP
+                  </p>
+                  {pool.tradingFee !== undefined && (
+                    <span className="text-[10px] text-mint bg-mint/10 px-1.5 py-0.5 rounded-full">
+                      {(pool.tradingFee / 1000).toFixed(2)}%
+                    </span>
+                  )}
+                  <span className="text-[10px] text-muted/60">
+                    {age(pool.createdAt)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-right">
+                    <p className="text-xs font-mono text-foreground">
+                      {pool.stats?.priceXrp
+                        ? pool.stats.priceXrp.toFixed(6)
+                        : "--"}{" "}
+                      <span className="text-muted">xrp</span>
+                    </p>
+                    <PctChange pct={pool.stats?.priceChange24hPct ?? null} />
+                  </div>
+                  <Sparkline points={pool.stats?.sparkline ?? []} />
+                </div>
               </div>
-              <div>
-                <span className="text-muted">xrp: </span>
-                <span className="text-foreground">
-                  {formatNum(pool.xrpBalance)}
-                </span>
-              </div>
-            </div>
-            {pool.lpToken && (
-              <div className="text-[10px] text-muted">
-                LP supply: {formatNum(pool.lpToken.value)}
-              </div>
-            )}
-            {pool.ammAccount && (
-              <div className="text-[10px] text-muted font-mono">
-                amm: {pool.ammAccount.slice(0, 8)}...
-                {pool.ammAccount.slice(-4)}
-              </div>
-            )}
 
-            {userId && (
-              <div className="flex flex-col gap-2 border-t border-white/5 pt-3">
-                {depositPool === pool.launchId ? (
-                  <div className="flex flex-col gap-2">
-                    <p className="text-xs text-foreground font-medium">
-                      add liquidity
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="number"
-                        value={depositTokenAmt}
-                        onChange={(e) => setDepositTokenAmt(e.target.value)}
-                        placeholder={`${pool.ticker} amount`}
-                        className="bg-[#1b1d28] border border-white/10 rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
-                      />
-                      <input
-                        type="number"
-                        value={depositXrpAmt}
-                        onChange={(e) => setDepositXrpAmt(e.target.value)}
-                        placeholder="xrp amount"
-                        className="bg-[#1b1d28] border border-white/10 rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
-                      />
-                    </div>
-                    {depositError && (
-                      <p className="text-[10px] text-red-400">{depositError}</p>
-                    )}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleDeposit(pool.launchId)}
-                        disabled={
-                          depositBusy || !depositTokenAmt || !depositXrpAmt
-                        }
-                        className="flex-1 py-1.5 rounded bg-mint text-[#1b1d28] text-xs font-semibold disabled:opacity-40"
-                      >
-                        {depositBusy ? "..." : "[deposit]"}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setDepositPool(null);
-                          setDepositError(null);
-                        }}
-                        className="px-3 py-1.5 rounded bg-white/5 text-muted text-xs"
-                      >
-                        cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : withdrawPool === pool.launchId ? (
-                  <div className="flex flex-col gap-2">
-                    <p className="text-xs text-foreground font-medium">
-                      remove liquidity
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="number"
-                        value={withdrawTokenAmt}
-                        onChange={(e) => setWithdrawTokenAmt(e.target.value)}
-                        placeholder={`${pool.ticker} amount`}
-                        className="bg-[#1b1d28] border border-white/10 rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
-                      />
-                      <input
-                        type="number"
-                        value={withdrawXrpAmt}
-                        onChange={(e) => setWithdrawXrpAmt(e.target.value)}
-                        placeholder="xrp amount"
-                        className="bg-[#1b1d28] border border-white/10 rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
-                      />
-                    </div>
-                    {withdrawError && (
-                      <p className="text-[10px] text-red-400">
-                        {withdrawError}
-                      </p>
-                    )}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleWithdraw(pool.launchId)}
-                        disabled={
-                          withdrawBusy || !withdrawTokenAmt || !withdrawXrpAmt
-                        }
-                        className="flex-1 py-1.5 rounded bg-red-500/80 text-white text-xs font-semibold disabled:opacity-40"
-                      >
-                        {withdrawBusy ? "..." : "[withdraw]"}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setWithdrawPool(null);
-                          setWithdrawError(null);
-                        }}
-                        className="px-3 py-1.5 rounded bg-white/5 text-muted text-xs"
-                      >
-                        cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => {
-                        setDepositPool(pool.launchId);
-                        setWithdrawPool(null);
-                      }}
-                      className="py-2 rounded-lg bg-white/5 text-mint text-xs font-medium hover:bg-white/10 transition-colors"
-                    >
-                      [add liquidity]
-                    </button>
-                    <button
-                      onClick={() => {
-                        setWithdrawPool(pool.launchId);
-                        setDepositPool(null);
-                      }}
-                      className="py-2 rounded-lg bg-white/5 text-red-400 text-xs font-medium hover:bg-white/10 transition-colors"
-                    >
-                      [withdraw]
-                    </button>
-                  </div>
-                )}
+              <div className="grid grid-cols-4 gap-2 text-center border-t border-white/5 pt-2">
+                <div>
+                  <p className="text-xs text-foreground">
+                    {xrp(pool.tvlDrops)}
+                  </p>
+                  <p className="text-[9px] text-muted">tvl (xrp)</p>
+                </div>
+                <div>
+                  <p className="text-xs text-foreground">
+                    {xrp(pool.stats?.volume24hDrops)}
+                  </p>
+                  <p className="text-[9px] text-muted">24h vol</p>
+                </div>
+                <div>
+                  <p className="text-xs text-foreground">
+                    {xrp(pool.stats?.fees24hDrops)}
+                  </p>
+                  <p className="text-[9px] text-muted">24h fees</p>
+                </div>
+                <div>
+                  <p className="text-xs text-mint font-semibold">
+                    {pool.stats?.aprPct !== null &&
+                    pool.stats?.aprPct !== undefined
+                      ? `${pool.stats.aprPct.toFixed(2)}%`
+                      : "--"}
+                  </p>
+                  <p className="text-[9px] text-muted">fee apr</p>
+                </div>
               </div>
-            )}
-          </div>
-        ))}
+            </Link>
+          ))}
       </div>
 
       {/* Tokens without pools */}
@@ -541,7 +367,7 @@ export default function PoolsPage() {
       )}
 
       <p className="text-[10px] text-muted/50 text-center">
-        live — xrpl native amm (XLS-30)
+        live — xrpl native amm (XLS-30) · all stats from validated on-ledger data
       </p>
     </div>
   );
