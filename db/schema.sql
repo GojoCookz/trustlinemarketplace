@@ -261,3 +261,36 @@ CREATE TABLE IF NOT EXISTS ad_impressions (
   user_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- market data: every row here is derived from validated on-ledger
+-- transactions or live amm_info reads. never synthesized.
+CREATE TABLE IF NOT EXISTS pool_trades (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  launch_id TEXT NOT NULL REFERENCES launches(id),
+  tx_hash TEXT NOT NULL UNIQUE,
+  ledger_index INTEGER NOT NULL,
+  side TEXT NOT NULL,                 -- buy = xrp in / token out, sell = token in / xrp out
+  token_amount REAL NOT NULL,         -- token units moved
+  xrp_drops INTEGER NOT NULL,         -- xrp volume in drops (absolute)
+  price REAL NOT NULL,                -- xrp per token at execution
+  executed_at TEXT NOT NULL           -- tx close time (utc iso)
+);
+CREATE INDEX IF NOT EXISTS idx_pool_trades_launch ON pool_trades(launch_id, executed_at);
+
+CREATE TABLE IF NOT EXISTS price_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  launch_id TEXT NOT NULL REFERENCES launches(id),
+  price REAL NOT NULL,                -- spot xrp per token from amm_info
+  token_balance REAL NOT NULL,
+  xrp_drops INTEGER NOT NULL,         -- pool xrp side in drops
+  taken_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_price_snapshots_launch ON price_snapshots(launch_id, taken_at);
+
+-- indexer cursor: last ledger scanned per pool so swaps are never double counted
+CREATE TABLE IF NOT EXISTS indexer_cursors (
+  launch_id TEXT PRIMARY KEY REFERENCES launches(id),
+  amm_account TEXT NOT NULL,
+  last_ledger INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT
+);

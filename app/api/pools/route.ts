@@ -1,18 +1,28 @@
 import { apiSuccess, apiError } from "@/lib/api";
 import { listLaunches } from "@/db/repo/launches";
 import { getClient } from "@/lib/xrpl/client";
+import {
+  indexPoolTrades,
+  recordSnapshot,
+  getPoolStats,
+  type PoolStats,
+} from "@/lib/marketdata";
 
 type PoolInfo = {
   launchId: string;
   ticker: string;
+  name: string;
   currencyHex: string;
   issuerAddress: string;
+  createdAt: string;
   exists: boolean;
   ammAccount?: string;
   tokenBalance?: string;
   xrpBalance?: string;
   lpToken?: { currency: string; issuer: string; value: string };
   tradingFee?: number;
+  tvlDrops?: number;
+  stats?: PoolStats;
 };
 
 export async function GET() {
@@ -29,8 +39,10 @@ export async function GET() {
       const base: PoolInfo = {
         launchId: launch.id,
         ticker: launch.ticker,
+        name: launch.name,
         currencyHex: launch.currency_hex,
         issuerAddress: launch.issuer_address,
+        createdAt: launch.created_at,
         exists: false,
       };
 
@@ -62,17 +74,30 @@ export async function GET() {
             value: string;
           };
 
-          if (typeof tokenAmt === "string") {
-            base.xrpBalance = (Number(tokenAmt) / 1_000_000).toFixed(6);
-          } else {
-            base.tokenBalance = tokenAmt.value;
+          let tokenBalance = 0;
+          let xrpDrops = 0;
+          for (const amt of [tokenAmt, xrpAmt]) {
+            if (typeof amt === "string") {
+              xrpDrops = Number(amt);
+              base.xrpBalance = (xrpDrops / 1_000_000).toFixed(6);
+            } else {
+              tokenBalance = parseFloat(amt.value);
+              base.tokenBalance = amt.value;
+            }
           }
 
-          if (typeof xrpAmt === "string") {
-            base.xrpBalance = (Number(xrpAmt) / 1_000_000).toFixed(6);
-          } else {
-            base.tokenBalance = base.tokenBalance ?? xrpAmt.value;
+          // pool holds equal value both sides: TVL = 2x the XRP side
+          base.tvlDrops = xrpDrops * 2;
+
+          // real-data pipeline: sample spot price + pull new on-ledger swaps
+          recordSnapshot(launch.id, tokenBalance, xrpDrops);
+          try {
+            await indexPoolTrades(launch, amm.account);
+          } catch {
+            // indexing is best-effort per request; next call retries
           }
+
+          base.stats = getPoolStats(launch.id, amm.trading_fee, base.tvlDrops);
         }
       } catch {
         // amm_info throws if no pool exists — that's fine
