@@ -32,13 +32,13 @@ const ROOMS = [
     href: "/nfts",
     name: "nfts",
     tagline: "walk up to anyone's wallet and make an offer.",
-    status: "soon",
+    status: "live",
   },
   {
     href: "/pools",
     name: "pools",
     tagline: "be the house. earn the fees.",
-    status: "soon",
+    status: "live",
   },
 ] as const;
 
