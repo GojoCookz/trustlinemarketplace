@@ -6,6 +6,7 @@ import { isDevMode } from "@/lib/xrpl/xaman";
 import { isTestnet, getClient } from "@/lib/xrpl/client";
 import { xrpToDrops } from "@/lib/fees";
 import { buildNftSellOffer } from "@/lib/xrpl/transactions/nfts";
+import { logNftActivity } from "@/db/repo/nft-collections";
 import { Wallet, type SubmittableTransaction } from "xrpl";
 
 const sellSchema = z.object({
@@ -68,6 +69,14 @@ export async function POST(req: NextRequest) {
     ) {
       return apiError(`sell offer failed: ${meta.TransactionResult}`, 500);
     }
+
+    logNftActivity({
+      nftokenId: body.nftokenId,
+      type: "sell_offer",
+      priceDrops: xrpToDrops(body.xrpAmount),
+      fromAddress: wallet.classicAddress,
+      txHash: signed.hash,
+    });
 
     return apiSuccess({
       offerTx: signed.hash,

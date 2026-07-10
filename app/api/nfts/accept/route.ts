@@ -8,12 +8,14 @@ import { getTreasuryAddress } from "@/lib/treasury";
 import { FEES, xrpToDrops } from "@/lib/fees";
 import { logPlatformFee } from "@/db/repo/listings";
 import { buildNftAcceptOffer } from "@/lib/xrpl/transactions/nfts";
-import { Wallet, type SubmittableTransaction } from "xrpl";
+import { logNftActivity, setItemOwner, getItem } from "@/db/repo/nft-collections";
+import { Wallet, getBalanceChanges, type SubmittableTransaction } from "xrpl";
 
 const acceptSchema = z.object({
   userId: z.string().min(1),
   sellOfferId: z.string().optional(),
   buyOfferId: z.string().optional(),
+  nftokenId: z.string().optional(),
   feeXrp: z.number().nonnegative().optional(),
   devSecret: z.string().min(1),
 }).refine(
@@ -107,6 +109,41 @@ export async function POST(req: NextRequest) {
       meta.TransactionResult !== "tesSUCCESS"
     ) {
       return apiError(`accept failed: ${meta.TransactionResult}`, 500);
+    }
+
+    // record the sale with the real settled amount from balance changes
+    if (body.nftokenId) {
+      let saleDrops: number | null = null;
+      try {
+        const changes = getBalanceChanges(meta as never);
+        const mine = changes.find(
+          (c) => c.account === wallet.classicAddress
+        );
+        const xrpChange = mine?.balances.find((b) => b.currency === "XRP");
+        if (xrpChange) {
+          saleDrops = Math.round(
+            Math.abs(parseFloat(xrpChange.value)) * 1_000_000
+          );
+        }
+      } catch {
+        // fall through — sale still recorded without a price
+      }
+
+      const item = getItem(body.nftokenId);
+      const prevOwner = item?.owner_address ?? null;
+      // accepting a sell offer transfers the nft to the accepter;
+      // accepting a buy offer transfers it away from the accepter
+      const newOwner = body.sellOfferId ? wallet.classicAddress : null;
+      if (newOwner) setItemOwner(body.nftokenId, newOwner);
+
+      logNftActivity({
+        nftokenId: body.nftokenId,
+        type: "sale",
+        priceDrops: saleDrops,
+        fromAddress: body.sellOfferId ? prevOwner : wallet.classicAddress,
+        toAddress: newOwner,
+        txHash: signed.hash,
+      });
     }
 
     return apiSuccess({

@@ -11,6 +11,7 @@ export const FEES = {
   FEATURED_LISTING_XRP: 10,
   PREMIUM_STORE_XRP: 10,
   LAUNCH_XRP: 10,
+  NFT_MINT_XRP: 1,
 } as const;
 
 export function marketplaceFee(priceDrops: number): {

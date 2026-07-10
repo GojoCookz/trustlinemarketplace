@@ -11,6 +11,7 @@ import { buildNftBuyOffer } from "@/lib/xrpl/transactions/nfts";
 import { Wallet, type SubmittableTransaction } from "xrpl";
 import { grantOnceXp } from "@/db/repo/participation";
 import { XP_RULES } from "@/lib/participation/xp";
+import { logNftActivity } from "@/db/repo/nft-collections";
 
 const offerSchema = z.object({
   userId: z.string().min(1),
@@ -95,6 +96,14 @@ export async function POST(req: NextRequest) {
     }
 
     grantOnceXp(body.userId, "first_nft_offer", XP_RULES.FIRST_NFT_OFFER, "nfts");
+    logNftActivity({
+      nftokenId: body.nftokenId,
+      type: "buy_offer",
+      priceDrops: offerDrops,
+      fromAddress: wallet.classicAddress,
+      toAddress: body.owner,
+      txHash: signed.hash,
+    });
     logPlatformFee(
       "nft_offer",
       feeDrops,

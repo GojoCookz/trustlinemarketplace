@@ -294,3 +294,47 @@ CREATE TABLE IF NOT EXISTS indexer_cursors (
   last_ledger INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT
 );
+
+-- nft collections: grouped by issuer + taxon (xrpl's native collection key).
+-- stats (floor/volume) derive from nft_activity — real recorded events only.
+CREATE TABLE IF NOT EXISTS nft_collections (
+  id TEXT PRIMARY KEY,
+  creator_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  description TEXT,
+  image_url TEXT,
+  issuer_address TEXT NOT NULL,
+  taxon INTEGER NOT NULL,
+  royalty_pct REAL NOT NULL DEFAULT 0,     -- TransferFee / 1000 (xrpl: 0-50000 = 0-50%)
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(issuer_address, taxon)
+);
+
+CREATE TABLE IF NOT EXISTS nft_items (
+  nftoken_id TEXT PRIMARY KEY,
+  collection_id TEXT NOT NULL REFERENCES nft_collections(id),
+  name TEXT NOT NULL,
+  image_url TEXT,
+  minter_id TEXT NOT NULL REFERENCES users(id),
+  owner_address TEXT NOT NULL,             -- updated when platform records a transfer
+  serial INTEGER,
+  mint_tx TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_nft_items_collection ON nft_items(collection_id);
+CREATE INDEX IF NOT EXISTS idx_nft_items_owner ON nft_items(owner_address);
+
+-- every row ties to an on-ledger tx hash
+CREATE TABLE IF NOT EXISTS nft_activity (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nftoken_id TEXT NOT NULL,
+  collection_id TEXT,
+  type TEXT NOT NULL,                      -- mint, sell_offer, buy_offer, sale
+  price_drops INTEGER,
+  from_address TEXT,
+  to_address TEXT,
+  tx_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_nft_activity_collection ON nft_activity(collection_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_nft_activity_token ON nft_activity(nftoken_id);

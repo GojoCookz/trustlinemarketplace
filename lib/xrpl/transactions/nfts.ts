@@ -1,3 +1,28 @@
+export function buildNftMint(opts: {
+  account: string;
+  taxon: number;
+  uri?: string; // plain string, hex-encoded here
+  transferFee?: number; // 0-50000 = 0-50% royalty, requires tfTransferable
+  burnable?: boolean;
+}): Record<string, unknown> {
+  // tfTransferable (8) so the nft can actually be traded
+  let flags = 8;
+  if (opts.burnable) flags |= 1;
+  const tx: Record<string, unknown> = {
+    TransactionType: "NFTokenMint",
+    Account: opts.account,
+    NFTokenTaxon: opts.taxon,
+    Flags: flags,
+  };
+  if (opts.uri) {
+    tx.URI = Buffer.from(opts.uri, "utf8").toString("hex").toUpperCase();
+  }
+  if (opts.transferFee && opts.transferFee > 0) {
+    tx.TransferFee = opts.transferFee;
+  }
+  return tx;
+}
+
 export function buildNftBuyOffer(opts: {
   account: string;
   nftokenId: string;
