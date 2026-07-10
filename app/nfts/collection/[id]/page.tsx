@@ -23,6 +23,19 @@ type Activity = {
   createdAt: string;
 };
 
+type LedgerOffer = {
+  offerId: string;
+  owner: string;
+  amountDrops: number | null;
+  destination: string | null;
+};
+
+type LedgerOffers = {
+  nftokenId: string;
+  sellOffers: LedgerOffer[];
+  buyOffers: LedgerOffer[];
+};
+
 type CollectionData = {
   id: string;
   name: string;
@@ -89,6 +102,17 @@ export default function CollectionPage({
   const [offerResult, setOfferResult] = useState<string | null>(null);
   const [offerError, setOfferError] = useState<string | null>(null);
 
+  const [sellNft, setSellNft] = useState<string | null>(null);
+  const [sellAmount, setSellAmount] = useState("");
+  const [sellBusy, setSellBusy] = useState(false);
+  const [sellError, setSellError] = useState<string | null>(null);
+
+  const [offersFor, setOffersFor] = useState<string | null>(null);
+  const [offersData, setOffersData] = useState<LedgerOffers | null>(null);
+  const [offersLoading, setOffersLoading] = useState(false);
+  const [acceptBusy, setAcceptBusy] = useState<string | null>(null);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+
   const load = useCallback(() => {
     fetch(`/api/collections/${id}`)
       .then((r) => r.json())
@@ -137,6 +161,98 @@ export default function CollectionPage({
       setOfferError("network error");
     } finally {
       setOfferBusy(false);
+    }
+  }
+
+  async function handleSell(nftokenId: string) {
+    if (!userId || !sellAmount || sellBusy) return;
+    const amt = parseFloat(sellAmount);
+    if (!amt || amt <= 0) return;
+
+    setSellBusy(true);
+    setSellError(null);
+    try {
+      const devSecret = localStorage.getItem("tl_dev_secret") ?? "";
+      const res = await fetch("/api/nfts/sell", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          nftokenId,
+          xrpAmount: amt,
+          devSecret,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSellNft(null);
+        setSellAmount("");
+        load();
+      } else {
+        setSellError(json.error ?? "listing failed");
+      }
+    } catch {
+      setSellError("network error");
+    } finally {
+      setSellBusy(false);
+    }
+  }
+
+  async function toggleOffers(nftokenId: string) {
+    if (offersFor === nftokenId) {
+      setOffersFor(null);
+      setOffersData(null);
+      return;
+    }
+    setOffersFor(nftokenId);
+    setOffersData(null);
+    setOffersLoading(true);
+    setAcceptError(null);
+    try {
+      const res = await fetch(`/api/nfts/offers?nftokenId=${nftokenId}`);
+      const json = await res.json();
+      if (json.success) setOffersData(json.data);
+    } catch {
+      // leave empty — ui shows none found
+    } finally {
+      setOffersLoading(false);
+    }
+  }
+
+  async function handleAccept(
+    nftokenId: string,
+    offer: LedgerOffer,
+    side: "sell" | "buy"
+  ) {
+    if (!userId || acceptBusy) return;
+    setAcceptBusy(offer.offerId);
+    setAcceptError(null);
+    try {
+      const devSecret = localStorage.getItem("tl_dev_secret") ?? "";
+      const res = await fetch("/api/nfts/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          nftokenId,
+          ...(side === "sell"
+            ? { sellOfferId: offer.offerId }
+            : { buyOfferId: offer.offerId }),
+          devSecret,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setOffersFor(null);
+        setOffersData(null);
+        load();
+      } else {
+        setAcceptError(json.error ?? "accept failed");
+      }
+    } catch {
+      setAcceptError("network error");
+    } finally {
+      setAcceptBusy(null);
     }
   }
 
@@ -350,6 +466,131 @@ export default function CollectionPage({
                       </button>
                     )}
                   </>
+                )}
+
+                {userId && mine && (
+                  <>
+                    {sellNft === item.nftokenId ? (
+                      <div className="flex flex-col gap-1.5">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={sellAmount}
+                          onChange={(e) => setSellAmount(e.target.value)}
+                          placeholder="asking price (xrp)"
+                          className="w-full bg-[#1b1d28] border border-white/10 rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
+                        />
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleSell(item.nftokenId)}
+                            disabled={sellBusy || !sellAmount}
+                            className="flex-1 py-1.5 rounded bg-mint text-[#1b1d28] text-xs font-semibold disabled:opacity-40"
+                          >
+                            {sellBusy ? "..." : "[list for sale]"}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSellNft(null);
+                              setSellError(null);
+                            }}
+                            className="px-2 py-1.5 rounded bg-white/5 text-muted text-xs"
+                          >
+                            x
+                          </button>
+                        </div>
+                        {sellError && (
+                          <p className="text-[10px] text-red-400">
+                            {sellError}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setSellNft(item.nftokenId)}
+                        className="w-full py-1.5 rounded-md bg-white/5 text-mint text-xs font-medium hover:bg-white/10 transition-colors"
+                      >
+                        [list for sale]
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {userId && (
+                  <button
+                    onClick={() => toggleOffers(item.nftokenId)}
+                    className="w-full py-1.5 rounded-md bg-white/5 text-muted text-[10px] hover:text-foreground transition-colors"
+                  >
+                    {offersFor === item.nftokenId
+                      ? "[hide offers]"
+                      : "[view offers]"}
+                  </button>
+                )}
+
+                {offersFor === item.nftokenId && (
+                  <div className="flex flex-col gap-1.5 border-t border-white/5 pt-2">
+                    {offersLoading && (
+                      <p className="text-[10px] text-muted">
+                        reading ledger...
+                      </p>
+                    )}
+                    {!offersLoading &&
+                      offersData &&
+                      offersData.sellOffers.length === 0 &&
+                      offersData.buyOffers.length === 0 && (
+                        <p className="text-[10px] text-muted">
+                          no open offers on-ledger
+                        </p>
+                      )}
+                    {offersData?.sellOffers.map((o) => (
+                      <div
+                        key={o.offerId}
+                        className="flex items-center justify-between text-[10px]"
+                      >
+                        <span className="text-red-400">
+                          listed {xrpFmt(o.amountDrops)} xrp
+                        </span>
+                        {!mine && o.amountDrops != null && (
+                          <button
+                            onClick={() =>
+                              handleAccept(item.nftokenId, o, "sell")
+                            }
+                            disabled={acceptBusy !== null}
+                            className="px-2 py-1 rounded bg-mint text-[#1b1d28] font-semibold disabled:opacity-40"
+                          >
+                            {acceptBusy === o.offerId ? "..." : "[buy now]"}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {offersData?.buyOffers.map((o) => (
+                      <div
+                        key={o.offerId}
+                        className="flex items-center justify-between text-[10px]"
+                      >
+                        <span className="text-mint">
+                          bid {xrpFmt(o.amountDrops)} xrp{" "}
+                          <span className="text-muted font-mono">
+                            {shortAddr(o.owner)}
+                          </span>
+                        </span>
+                        {mine && (
+                          <button
+                            onClick={() =>
+                              handleAccept(item.nftokenId, o, "buy")
+                            }
+                            disabled={acceptBusy !== null}
+                            className="px-2 py-1 rounded bg-mint text-[#1b1d28] font-semibold disabled:opacity-40"
+                          >
+                            {acceptBusy === o.offerId ? "..." : "[accept]"}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {acceptError && (
+                      <p className="text-[10px] text-red-400">{acceptError}</p>
+                    )}
+                  </div>
                 )}
               </div>
             );
