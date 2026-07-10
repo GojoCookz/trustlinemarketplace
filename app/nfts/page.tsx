@@ -1,14 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/components/WalletProvider";
 
+type CollectionCard = {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+  issuerAddress: string;
+  stats: {
+    items: number;
+    owners: number;
+    floorDrops: number | null;
+    volumeDrops: number;
+  };
+};
+
+function xrpFmt(drops: number | null): string {
+  if (drops === null) return "--";
+  const v = drops / 1_000_000;
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+  if (v >= 1) return v.toFixed(2);
+  return v.toFixed(4);
+}
+
 export default function NftsPage() {
   const router = useRouter();
-  const { address: myAddress } = useWallet();
+  const { address: myAddress, userId } = useWallet();
   const [address, setAddress] = useState("");
   const [recentError, setRecentError] = useState<string | null>(null);
+  const [collections, setCollections] = useState<CollectionCard[]>([]);
+
+  useEffect(() => {
+    fetch("/api/collections")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success) setCollections(res.data);
+      })
+      .catch(() => {});
+  }, []);
 
   function handleBrowse() {
     const addr = address.trim();
@@ -28,13 +60,70 @@ export default function NftsPage() {
 
   return (
     <div className="flex flex-col gap-5 py-8">
-      <header>
-        <h1 className="text-xl font-bold text-mint">[nfts]</h1>
-        <p className="text-xs text-muted">
-          walk up to anyone's wallet and see what they hold. make offers on
-          anything.
-        </p>
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-mint">[nfts]</h1>
+          <p className="text-xs text-muted">
+            walk up to anyone's wallet and see what they hold. make offers on
+            anything.
+          </p>
+        </div>
+        {userId && (
+          <Link
+            href="/nfts/mint"
+            className="px-4 py-2 rounded-lg bg-mint text-[#1b1d28] font-semibold text-sm flex-shrink-0"
+          >
+            [mint]
+          </Link>
+        )}
       </header>
+
+      {/* Collections */}
+      {collections.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h2 className="text-sm font-semibold text-muted">
+            collections ({collections.length})
+          </h2>
+          <div className="grid grid-cols-1 gap-2">
+            {collections.map((c) => (
+              <Link
+                key={c.id}
+                href={`/nfts/collection/${c.id}`}
+                className="rounded-lg bg-card border border-white/5 p-3 flex items-center gap-3 hover:border-mint/30 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-lg bg-white/5 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                  {c.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={c.imageUrl}
+                      alt={c.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-mint font-bold">{c.name[0]}</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">
+                    {c.name}
+                  </p>
+                  <p className="text-[10px] text-muted">
+                    {c.stats.items} items · {c.stats.owners} owners
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs text-foreground">
+                    floor {xrpFmt(c.stats.floorDrops)}
+                  </p>
+                  <p className="text-[10px] text-muted">
+                    vol {xrpFmt(c.stats.volumeDrops)} xrp
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* The book — browse any wallet */}
       <div className="rounded-lg bg-mint/5 border border-mint/10 p-4 flex flex-col gap-3">
