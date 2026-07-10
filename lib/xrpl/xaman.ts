@@ -14,9 +14,15 @@ function getXumm(): XummSdk | null {
   return xummInstance;
 }
 
+// dev mode governs TRANSACTION SIGNING fallback only (testnet faucet wallet).
+// xaman sign-in works whenever api keys exist, regardless of dev mode.
 export function isDevMode(): boolean {
   if (process.env.DEV_MODE === "true") return true;
   return !process.env.XAMAN_API_KEY;
+}
+
+export function hasXamanKeys(): boolean {
+  return Boolean(process.env.XAMAN_API_KEY && process.env.XAMAN_API_SECRET);
 }
 
 export type SignInResult = {

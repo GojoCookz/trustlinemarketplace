@@ -1,8 +1,8 @@
 import { apiSuccess, apiError } from "@/lib/api";
-import { createSignInPayload, isDevMode } from "@/lib/xrpl/xaman";
+import { createSignInPayload, hasXamanKeys } from "@/lib/xrpl/xaman";
 
 export async function POST() {
-  if (isDevMode()) {
+  if (!hasXamanKeys()) {
     return apiError("Xaman not configured — use /api/auth/dev for testnet login", 503);
   }
 
