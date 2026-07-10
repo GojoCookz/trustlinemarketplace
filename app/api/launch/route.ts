@@ -8,6 +8,8 @@ import { isDevMode } from "@/lib/xrpl/xaman";
 import { isTestnet, getClient } from "@/lib/xrpl/client";
 import { getTreasuryAddress } from "@/lib/treasury";
 import { FEES, xrpToDrops } from "@/lib/fees";
+import { grantOnceXp } from "@/db/repo/participation";
+import { XP_RULES } from "@/lib/participation/xp";
 import {
   currencyCode,
   buildIssuerAccountSet,
@@ -161,6 +163,7 @@ export async function POST(req: NextRequest) {
     });
 
     logPlatformFee("launch", feeDrops, launch.id, body.creatorId, feeTx);
+    grantOnceXp(body.creatorId, "first_launch", XP_RULES.FIRST_LAUNCH, "launch");
 
     return apiSuccess({
       id: launch.id,

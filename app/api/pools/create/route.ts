@@ -10,6 +10,8 @@ import { getTreasuryAddress } from "@/lib/treasury";
 import { FEES, xrpToDrops } from "@/lib/fees";
 import { buildAmmCreate } from "@/lib/xrpl/transactions/amm";
 import { Wallet, type SubmittableTransaction } from "xrpl";
+import { grantOnceXp } from "@/db/repo/participation";
+import { XP_RULES } from "@/lib/participation/xp";
 
 const createSchema = z.object({
   userId: z.string().min(1),
@@ -109,6 +111,7 @@ export async function POST(req: NextRequest) {
       body.userId,
       feeSigned.hash
     );
+    grantOnceXp(body.userId, "first_pool", XP_RULES.FIRST_POOL, "pools");
 
     return apiSuccess({
       ammTx: signed.hash,

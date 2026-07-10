@@ -85,3 +85,12 @@ export function logAdImpression(slot: string, page: string, userId: string | nul
     .prepare("INSERT INTO ad_impressions (slot, page, user_id) VALUES (?, ?, ?)")
     .run(slot, page, userId);
 }
+
+export function grantOnceXp(userId: string, action: string, amount: number, room: string): boolean {
+  const existing = getDb()
+    .prepare("SELECT 1 FROM xp_events WHERE user_id = ? AND action = ?")
+    .get(userId, action);
+  if (existing) return false;
+  insertXpEvent(userId, action, amount, room);
+  return true;
+}

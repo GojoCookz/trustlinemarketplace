@@ -15,6 +15,7 @@ function getXumm(): XummSdk | null {
 }
 
 export function isDevMode(): boolean {
+  if (process.env.DEV_MODE === "true") return true;
   return !process.env.XAMAN_API_KEY;
 }
 

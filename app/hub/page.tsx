@@ -39,6 +39,11 @@ export default function HubPage() {
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [tab, setTab] = useState<"tasks" | "board" | "achievements">("tasks");
 
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [customCode, setCustomCode] = useState("");
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+
   const userId =
     typeof window !== "undefined"
       ? localStorage.getItem("tl_user_id")
@@ -211,23 +216,92 @@ export default function HubPage() {
       </button>
 
       {/* Referral code */}
-      <div className="rounded-lg bg-card border border-white/5 p-3 flex items-center justify-between">
-        <div>
-          <p className="text-xs text-muted">your referral code</p>
-          <p className="text-sm font-mono font-semibold text-foreground">
-            {profile.referralCode}
-          </p>
+      <div className="rounded-lg bg-card border border-white/5 p-3 flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted">your referral code</p>
+            <p className="text-sm font-mono font-semibold text-foreground">
+              {profile.referralCode}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() =>
+                navigator.clipboard.writeText(
+                  `${window.location.origin}?ref=${profile.referralCode}`
+                )
+              }
+              className="text-xs text-mint hover:text-mint/70 transition-colors"
+            >
+              [copy link]
+            </button>
+            {!showUpgrade && (
+              <button
+                onClick={() => setShowUpgrade(true)}
+                className="text-xs text-muted hover:text-foreground transition-colors"
+              >
+                [customize]
+              </button>
+            )}
+          </div>
         </div>
-        <button
-          onClick={() =>
-            navigator.clipboard.writeText(
-              `${window.location.origin}?ref=${profile.referralCode}`
-            )
-          }
-          className="text-xs text-mint hover:text-mint/70 transition-colors"
-        >
-          [copy link]
-        </button>
+        {showUpgrade && (
+          <div className="flex flex-col gap-2 border-t border-white/5 pt-2">
+            <p className="text-[10px] text-muted">
+              pick a custom code — 1 xrp, one-time
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customCode}
+                onChange={(e) =>
+                  setCustomCode(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))
+                }
+                placeholder="your_code"
+                maxLength={20}
+                className="flex-1 bg-[#1b1d28] border border-white/10 rounded px-2 py-1.5 text-xs text-foreground font-mono placeholder:text-muted focus:outline-none focus:border-mint/30"
+              />
+              <button
+                onClick={async () => {
+                  if (!customCode || customCode.length < 3 || upgradeBusy) return;
+                  setUpgradeBusy(true);
+                  setUpgradeError(null);
+                  try {
+                    const devSecret = localStorage.getItem("tl_dev_secret") ?? "";
+                    const res = await fetch("/api/hub/upgrade-code", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        userId,
+                        newCode: customCode,
+                        devSecret,
+                      }),
+                    });
+                    const json = await res.json();
+                    if (json.success) {
+                      setShowUpgrade(false);
+                      setCustomCode("");
+                      fetchProfile();
+                    } else {
+                      setUpgradeError(json.error ?? "upgrade failed");
+                    }
+                  } catch {
+                    setUpgradeError("network error");
+                  } finally {
+                    setUpgradeBusy(false);
+                  }
+                }}
+                disabled={upgradeBusy || customCode.length < 3}
+                className="px-3 py-1.5 rounded bg-mint text-[#1b1d28] text-xs font-semibold disabled:opacity-40"
+              >
+                {upgradeBusy ? "..." : "[upgrade — 1 xrp]"}
+              </button>
+            </div>
+            {upgradeError && (
+              <p className="text-[10px] text-red-400">{upgradeError}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

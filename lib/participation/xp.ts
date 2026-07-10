@@ -4,7 +4,13 @@ export const XP_RULES = {
   STREAK_BONUS_30: 200,
   TASK_COMPLETE: 0,
   FIRST_REFERRAL: 25,
+  REFERRAL_REWARD: 10,
   SIGNUP_BONUS: 5,
+  FIRST_TRADE: 50,
+  FIRST_LISTING: 50,
+  FIRST_LAUNCH: 100,
+  FIRST_POOL: 75,
+  FIRST_NFT_OFFER: 25,
 } as const;
 
 export const STREAK_MULTIPLIERS: Record<number, number> = {

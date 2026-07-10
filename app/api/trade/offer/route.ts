@@ -10,6 +10,8 @@ import { getTreasuryAddress } from "@/lib/treasury";
 import { tradingFee } from "@/lib/fees";
 import { buildOfferCreate } from "@/lib/xrpl/transactions/offers";
 import { Wallet, type SubmittableTransaction } from "xrpl";
+import { grantOnceXp } from "@/db/repo/participation";
+import { XP_RULES } from "@/lib/participation/xp";
 
 const offerSchema = z.object({
   userId: z.string().min(1),
@@ -96,6 +98,7 @@ export async function POST(req: NextRequest) {
     }
 
     logPlatformFee("trading", feeDrops, launch.id, body.userId, feeSigned.hash);
+    grantOnceXp(body.userId, "first_trade", XP_RULES.FIRST_TRADE, "trade");
 
     return apiSuccess({
       offerTx: signed.hash,

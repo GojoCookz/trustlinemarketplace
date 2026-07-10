@@ -1,33 +1,33 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { apiSuccess, apiError } from "@/lib/api";
+import { getUser, setCustomReferralCode } from "@/db/repo/users";
 import { getDb } from "@/db";
 import { isDevMode } from "@/lib/xrpl/xaman";
 import { isTestnet, getClient } from "@/lib/xrpl/client";
 import { getTreasuryAddress } from "@/lib/treasury";
 import { FEES, xrpToDrops } from "@/lib/fees";
 import { logPlatformFee } from "@/db/repo/listings";
-import { buildNftBuyOffer } from "@/lib/xrpl/transactions/nfts";
 import { Wallet, type SubmittableTransaction } from "xrpl";
-import { grantOnceXp } from "@/db/repo/participation";
-import { XP_RULES } from "@/lib/participation/xp";
 
-const offerSchema = z.object({
+const upgradeSchema = z.object({
   userId: z.string().min(1),
-  nftokenId: z.string().min(1),
-  owner: z.string().min(1),
-  xrpAmount: z.number().positive().max(1_000_000),
+  newCode: z
+    .string()
+    .min(3)
+    .max(20)
+    .regex(/^[a-z0-9_]+$/, "lowercase letters, numbers, and underscores only"),
   devSecret: z.string().min(1),
 });
 
 export async function POST(req: NextRequest) {
-  let body: z.infer<typeof offerSchema>;
+  let body: z.infer<typeof upgradeSchema>;
   try {
-    body = offerSchema.parse(await req.json());
+    body = upgradeSchema.parse(await req.json());
   } catch (e) {
     const msg =
-      e instanceof z.ZodError ? e.issues[0]?.message : "invalid offer input";
-    return apiError(msg ?? "invalid offer input");
+      e instanceof z.ZodError ? e.issues[0]?.message : "invalid input";
+    return apiError(msg ?? "invalid input");
   }
 
   if (!isDevMode()) {
@@ -37,22 +37,25 @@ export async function POST(req: NextRequest) {
     return apiError("dev signing only available on testnet", 403);
   }
 
-  const user = getDb()
+  const user = getUser(body.userId);
+  if (!user) return apiError("user not found", 404);
+  if (user.custom_code === 1) {
+    return apiError("already upgraded — code can only be customized once");
+  }
+
+  const userRow = getDb()
     .prepare("SELECT address FROM users WHERE id = ?")
     .get(body.userId) as { address: string | null } | undefined;
-  if (!user?.address) return apiError("wallet not connected", 400);
+  if (!userRow?.address) return apiError("wallet not connected", 400);
 
   try {
     const client = await getClient();
     const wallet = Wallet.fromSeed(body.devSecret);
-    if (wallet.classicAddress !== user.address) {
+    if (wallet.classicAddress !== userRow.address) {
       return apiError("devSecret does not match wallet", 403);
     }
 
-    const offerDrops = xrpToDrops(body.xrpAmount);
-
-    // 3% marketplace fee to treasury
-    const feeDrops = Math.round(offerDrops * FEES.MARKETPLACE_PCT);
+    const feeDrops = xrpToDrops(FEES.PREMIUM_CODE_XRP);
     const treasury = await getTreasuryAddress();
     const feePrepared = await client.autofill({
       TransactionType: "Payment",
@@ -69,48 +72,31 @@ export async function POST(req: NextRequest) {
       "TransactionResult" in feeMeta &&
       feeMeta.TransactionResult !== "tesSUCCESS"
     ) {
-      return apiError(`fee payment failed: ${feeMeta.TransactionResult}`, 500);
+      return apiError(
+        `payment failed: ${feeMeta.TransactionResult}`,
+        500
+      );
     }
 
-    const offerTx = buildNftBuyOffer({
-      account: wallet.classicAddress,
-      nftokenId: body.nftokenId,
-      amountDrops: offerDrops,
-      owner: body.owner,
-    });
-
-    const prepared = await client.autofill(
-      offerTx as unknown as SubmittableTransaction
-    );
-    const signed = wallet.sign(prepared);
-    const result = await client.submitAndWait(signed.tx_blob);
-    const meta = result.result.meta;
-    if (
-      typeof meta === "object" &&
-      meta !== null &&
-      "TransactionResult" in meta &&
-      meta.TransactionResult !== "tesSUCCESS"
-    ) {
-      return apiError(`offer failed: ${meta.TransactionResult}`, 500);
+    const success = setCustomReferralCode(body.userId, body.newCode);
+    if (!success) {
+      return apiError("code already taken — pick another");
     }
 
-    grantOnceXp(body.userId, "first_nft_offer", XP_RULES.FIRST_NFT_OFFER, "nfts");
     logPlatformFee(
-      "nft_offer",
+      "custom_code",
       feeDrops,
-      body.nftokenId,
+      body.userId,
       body.userId,
       feeSigned.hash
     );
 
     return apiSuccess({
-      offerTx: signed.hash,
+      newCode: body.newCode,
       feeTx: feeSigned.hash,
-      nftokenId: body.nftokenId,
-      xrpAmount: body.xrpAmount,
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "offer failed";
+    const msg = err instanceof Error ? err.message : "upgrade failed";
     return apiError(msg, 500);
   }
 }

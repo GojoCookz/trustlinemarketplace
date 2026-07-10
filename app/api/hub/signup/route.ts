@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { apiSuccess, apiError } from "@/lib/api";
-import { createUser } from "@/db/repo/users";
+import { createUser, getUserByReferralCode, countReferrals } from "@/db/repo/users";
 import { totalXp } from "@/db/repo/participation";
 import { insertXpEvent, getStreak, listAchievements } from "@/db/repo/participation";
 import { computeLevel, XP_RULES } from "@/lib/participation/xp";
@@ -24,6 +24,17 @@ export async function POST(req: NextRequest) {
 
   if (XP_RULES.SIGNUP_BONUS > 0) {
     insertXpEvent(user.id, "signup_bonus", XP_RULES.SIGNUP_BONUS, "hub");
+  }
+
+  if (body.referralSource) {
+    const referrer = getUserByReferralCode(body.referralSource);
+    if (referrer) {
+      const refCount = countReferrals(body.referralSource);
+      if (refCount === 1) {
+        insertXpEvent(referrer.id, "first_referral", XP_RULES.FIRST_REFERRAL, "hub");
+      }
+      insertXpEvent(referrer.id, "referral", XP_RULES.REFERRAL_REWARD, "hub");
+    }
   }
 
   const xp = totalXp(user.id);

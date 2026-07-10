@@ -4,6 +4,8 @@ import { apiSuccess, apiError } from "@/lib/api";
 import { createListing, listListings } from "@/db/repo/listings";
 import { getSellerProfile } from "@/db/repo/sellers";
 import { xrpToDrops } from "@/lib/fees";
+import { grantOnceXp } from "@/db/repo/participation";
+import { XP_RULES } from "@/lib/participation/xp";
 
 const createSchema = z.object({
   sellerId: z.string().min(1),
@@ -39,6 +41,8 @@ export async function POST(req: NextRequest) {
       deliveryDays: body.deliveryDays,
     }
   );
+
+  grantOnceXp(body.sellerId, "first_listing", XP_RULES.FIRST_LISTING, "market");
 
   return apiSuccess(listing);
 }
