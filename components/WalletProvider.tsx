@@ -20,6 +20,7 @@ type WalletState = {
   isConnecting: boolean;
   isDevMode: boolean;
   connect: () => Promise<void>;
+  connectExtension: () => Promise<string | null>;
   devLogin: () => Promise<void>;
   disconnect: () => void;
 };
@@ -35,6 +36,7 @@ const WalletContext = createContext<WalletState>({
   isConnecting: false,
   isDevMode: false,
   connect: async () => {},
+  connectExtension: async () => null,
   devLogin: async () => {},
   disconnect: () => {},
 });
@@ -152,6 +154,70 @@ export default function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // browser-extension wallets: gemwallet first, crossmark fallback.
+  // returns an error string for the ui, or null on success.
+  const connectExtension = useCallback(async (): Promise<string | null> => {
+    setIsConnecting(true);
+    try {
+      let extAddress: string | null = null;
+      let provider: "gemwallet" | "crossmark" | null = null;
+
+      try {
+        const gem = await import("@gemwallet/api");
+        const installed = await gem.isInstalled();
+        if (installed.result.isInstalled) {
+          const addr = await gem.getAddress();
+          if (addr.type === "response" && addr.result?.address) {
+            extAddress = addr.result.address;
+            provider = "gemwallet";
+          }
+        }
+      } catch {
+        // gemwallet not present or user rejected — try crossmark
+      }
+
+      if (!extAddress) {
+        try {
+          const { default: crossmark } = await import("@crossmarkio/sdk");
+          const { response } = await crossmark.methods.signInAndWait();
+          const addr = response?.data?.address;
+          if (addr) {
+            extAddress = addr;
+            provider = "crossmark";
+          }
+        } catch {
+          // crossmark not present or rejected
+        }
+      }
+
+      if (!extAddress || !provider) {
+        return "no extension wallet found — install gemwallet or crossmark";
+      }
+
+      const res = await fetch("/api/auth/wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: extAddress, provider }),
+      });
+      const data = await res.json();
+      if (!data.success) return data.error ?? "sign-in failed";
+
+      saveState({
+        address: data.data.address,
+        userId: data.data.id,
+        referralCode: data.data.referralCode,
+        xp: data.data.xp,
+        level: data.data.level,
+        title: data.data.title,
+        streak: data.data.streak,
+        isDevMode: false,
+      });
+      return null;
+    } finally {
+      setIsConnecting(false);
+    }
+  }, []);
+
   async function devLoginInner() {
     setIsConnecting(true);
     try {
@@ -208,6 +274,7 @@ export default function WalletProvider({ children }: { children: ReactNode }) {
         isConnecting,
         isDevMode,
         connect,
+        connectExtension,
         devLogin,
         disconnect,
       }}

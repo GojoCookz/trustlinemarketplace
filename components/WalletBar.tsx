@@ -1,10 +1,25 @@
 "use client";
 
+import { useState } from "react";
 import { useWallet } from "./WalletProvider";
 
 export default function WalletBar() {
-  const { address, isConnecting, isDevMode, connect, devLogin, disconnect } =
-    useWallet();
+  const {
+    address,
+    isConnecting,
+    isDevMode,
+    connect,
+    connectExtension,
+    devLogin,
+    disconnect,
+  } = useWallet();
+  const [extError, setExtError] = useState<string | null>(null);
+
+  async function handleExtension() {
+    setExtError(null);
+    const err = await connectExtension();
+    if (err) setExtError(err);
+  }
 
   if (address) {
     const short = `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -43,21 +58,31 @@ export default function WalletBar() {
   }
 
   return (
-    <div className="flex flex-col sm:flex-row gap-2">
-      <button
-        onClick={connect}
-        disabled={isConnecting}
-        className="flex-1 rounded-lg bg-mint text-[#1b1d28] font-semibold text-sm py-3 disabled:opacity-40"
-      >
-        {isConnecting ? "connecting..." : "[connect xaman]"}
-      </button>
-      <button
-        onClick={devLogin}
-        disabled={isConnecting}
-        className="flex-1 rounded-lg bg-card border border-white/10 text-foreground font-semibold text-sm py-3 disabled:opacity-40 hover:border-mint/30 transition-colors"
-      >
-        [dev wallet — testnet]
-      </button>
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col sm:flex-row gap-2">
+        <button
+          onClick={connect}
+          disabled={isConnecting}
+          className="flex-1 rounded-lg bg-mint text-[#1b1d28] font-semibold text-sm py-3 disabled:opacity-40"
+        >
+          {isConnecting ? "connecting..." : "[xaman — phone]"}
+        </button>
+        <button
+          onClick={handleExtension}
+          disabled={isConnecting}
+          className="flex-1 rounded-lg bg-card border border-white/10 text-mint font-semibold text-sm py-3 disabled:opacity-40 hover:border-mint/30 transition-colors"
+        >
+          [extension — gem / crossmark]
+        </button>
+        <button
+          onClick={devLogin}
+          disabled={isConnecting}
+          className="flex-1 rounded-lg bg-card border border-white/10 text-foreground font-semibold text-sm py-3 disabled:opacity-40 hover:border-mint/30 transition-colors"
+        >
+          [dev wallet — testnet]
+        </button>
+      </div>
+      {extError && <p className="text-[10px] text-red-400 px-1">{extError}</p>}
     </div>
   );
 }
