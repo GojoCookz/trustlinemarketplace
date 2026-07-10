@@ -46,6 +46,13 @@ export default function PoolsPage() {
   const [depositResult, setDepositResult] = useState<string | null>(null);
   const [depositError, setDepositError] = useState<string | null>(null);
 
+  const [withdrawPool, setWithdrawPool] = useState<string | null>(null);
+  const [withdrawTokenAmt, setWithdrawTokenAmt] = useState("");
+  const [withdrawXrpAmt, setWithdrawXrpAmt] = useState("");
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const [withdrawResult, setWithdrawResult] = useState<string | null>(null);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+
   function fetchPools() {
     setLoading(true);
     fetch("/api/pools")
@@ -144,6 +151,45 @@ export default function PoolsPage() {
     }
   }
 
+  async function handleWithdraw(launchId: string) {
+    if (!userId || withdrawBusy) return;
+    const tokenAmt = parseFloat(withdrawTokenAmt);
+    const xrpAmt = parseFloat(withdrawXrpAmt);
+    if (!tokenAmt || !xrpAmt) return;
+
+    setWithdrawBusy(true);
+    setWithdrawError(null);
+    setWithdrawResult(null);
+    try {
+      const devSecret = localStorage.getItem("tl_dev_secret") ?? "";
+      const res = await fetch("/api/pools/withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          launchId,
+          tokenAmount: tokenAmt,
+          xrpAmount: xrpAmt,
+          devSecret,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setWithdrawResult(json.data.withdrawTx);
+        setWithdrawPool(null);
+        setWithdrawTokenAmt("");
+        setWithdrawXrpAmt("");
+        fetchPools();
+      } else {
+        setWithdrawError(json.error ?? "withdraw failed");
+      }
+    } catch {
+      setWithdrawError("network error");
+    } finally {
+      setWithdrawBusy(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5 py-8">
       <header className="flex items-center justify-between">
@@ -172,6 +218,12 @@ export default function PoolsPage() {
       {depositResult && (
         <div className="rounded-lg bg-mint/10 border border-mint/20 p-3 text-sm text-mint">
           liquidity added — tx: {depositResult.slice(0, 12)}...
+        </div>
+      )}
+
+      {withdrawResult && (
+        <div className="rounded-lg bg-mint/10 border border-mint/20 p-3 text-sm text-mint">
+          liquidity removed — tx: {withdrawResult.slice(0, 12)}...
         </div>
       )}
 
@@ -332,9 +384,9 @@ export default function PoolsPage() {
             )}
 
             {userId && (
-              <>
+              <div className="flex flex-col gap-2 border-t border-white/5 pt-3">
                 {depositPool === pool.launchId ? (
-                  <div className="flex flex-col gap-2 border-t border-white/5 pt-3">
+                  <div className="flex flex-col gap-2">
                     <p className="text-xs text-foreground font-medium">
                       add liquidity
                     </p>
@@ -378,15 +430,76 @@ export default function PoolsPage() {
                       </button>
                     </div>
                   </div>
+                ) : withdrawPool === pool.launchId ? (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs text-foreground font-medium">
+                      remove liquidity
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        value={withdrawTokenAmt}
+                        onChange={(e) => setWithdrawTokenAmt(e.target.value)}
+                        placeholder={`${pool.ticker} amount`}
+                        className="bg-[#1b1d28] border border-white/10 rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
+                      />
+                      <input
+                        type="number"
+                        value={withdrawXrpAmt}
+                        onChange={(e) => setWithdrawXrpAmt(e.target.value)}
+                        placeholder="xrp amount"
+                        className="bg-[#1b1d28] border border-white/10 rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
+                      />
+                    </div>
+                    {withdrawError && (
+                      <p className="text-[10px] text-red-400">
+                        {withdrawError}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleWithdraw(pool.launchId)}
+                        disabled={
+                          withdrawBusy || !withdrawTokenAmt || !withdrawXrpAmt
+                        }
+                        className="flex-1 py-1.5 rounded bg-red-500/80 text-white text-xs font-semibold disabled:opacity-40"
+                      >
+                        {withdrawBusy ? "..." : "[withdraw]"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setWithdrawPool(null);
+                          setWithdrawError(null);
+                        }}
+                        className="px-3 py-1.5 rounded bg-white/5 text-muted text-xs"
+                      >
+                        cancel
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <button
-                    onClick={() => setDepositPool(pool.launchId)}
-                    className="w-full py-2 rounded-lg bg-white/5 text-mint text-xs font-medium hover:bg-white/10 transition-colors"
-                  >
-                    [add liquidity]
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        setDepositPool(pool.launchId);
+                        setWithdrawPool(null);
+                      }}
+                      className="py-2 rounded-lg bg-white/5 text-mint text-xs font-medium hover:bg-white/10 transition-colors"
+                    >
+                      [add liquidity]
+                    </button>
+                    <button
+                      onClick={() => {
+                        setWithdrawPool(pool.launchId);
+                        setDepositPool(null);
+                      }}
+                      className="py-2 rounded-lg bg-white/5 text-red-400 text-xs font-medium hover:bg-white/10 transition-colors"
+                    >
+                      [withdraw]
+                    </button>
+                  </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         ))}

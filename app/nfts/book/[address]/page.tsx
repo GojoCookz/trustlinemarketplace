@@ -49,6 +49,12 @@ export default function BookPage({
   const [offerResult, setOfferResult] = useState<string | null>(null);
   const [offerError, setOfferError] = useState<string | null>(null);
 
+  const [sellNft, setSellNft] = useState<string | null>(null);
+  const [sellAmount, setSellAmount] = useState("");
+  const [sellBusy, setSellBusy] = useState(false);
+  const [sellResult, setSellResult] = useState<string | null>(null);
+  const [sellError, setSellError] = useState<string | null>(null);
+
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -101,6 +107,41 @@ export default function BookPage({
     }
   }
 
+  async function handleSell(nftokenId: string) {
+    if (!userId || !sellAmount || sellBusy) return;
+    const xrp = parseFloat(sellAmount);
+    if (!xrp || xrp <= 0) return;
+
+    setSellBusy(true);
+    setSellError(null);
+    setSellResult(null);
+    try {
+      const devSecret = localStorage.getItem("tl_dev_secret") ?? "";
+      const res = await fetch("/api/nfts/sell", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          nftokenId,
+          xrpAmount: xrp,
+          devSecret,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSellResult(json.data.offerTx);
+        setSellNft(null);
+        setSellAmount("");
+      } else {
+        setSellError(json.error ?? "sell offer failed");
+      }
+    } catch {
+      setSellError("network error");
+    } finally {
+      setSellBusy(false);
+    }
+  }
+
   const isOwnWallet = myAddress === address;
 
   if (loading) {
@@ -145,7 +186,13 @@ export default function BookPage({
 
       {offerResult && (
         <div className="rounded-lg bg-mint/10 border border-mint/20 p-3 text-sm text-mint">
-          offer submitted — tx: {offerResult.slice(0, 12)}...
+          buy offer submitted — tx: {offerResult.slice(0, 12)}...
+        </div>
+      )}
+
+      {sellResult && (
+        <div className="rounded-lg bg-mint/10 border border-mint/20 p-3 text-sm text-mint">
+          sell offer created — tx: {sellResult.slice(0, 12)}...
         </div>
       )}
 
@@ -230,7 +277,7 @@ export default function BookPage({
                     issuer: {shortAddr(nft.issuer)}
                   </p>
 
-                  {!isOwnWallet && userId && (
+                  {userId && !isOwnWallet && (
                     <>
                       {offerNft === nft.nftokenId ? (
                         <div className="flex flex-col gap-1.5">
@@ -273,6 +320,54 @@ export default function BookPage({
                           className="w-full py-1.5 rounded-md bg-white/5 text-mint text-xs font-medium hover:bg-white/10 transition-colors"
                         >
                           [make offer]
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {userId && isOwnWallet && (
+                    <>
+                      {sellNft === nft.nftokenId ? (
+                        <div className="flex flex-col gap-1.5">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={sellAmount}
+                            onChange={(e) => setSellAmount(e.target.value)}
+                            placeholder="asking price (xrp)"
+                            className="w-full bg-[#1b1d28] border border-white/10 rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleSell(nft.nftokenId)}
+                              disabled={sellBusy || !sellAmount}
+                              className="flex-1 py-1.5 rounded bg-mint text-[#1b1d28] text-xs font-semibold disabled:opacity-40"
+                            >
+                              {sellBusy ? "..." : "[list for sale]"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSellNft(null);
+                                setSellError(null);
+                              }}
+                              className="px-2 py-1.5 rounded bg-white/5 text-muted text-xs"
+                            >
+                              x
+                            </button>
+                          </div>
+                          {sellError && (
+                            <p className="text-[10px] text-red-400">
+                              {sellError}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setSellNft(nft.nftokenId)}
+                          className="w-full py-1.5 rounded-md bg-white/5 text-mint text-xs font-medium hover:bg-white/10 transition-colors"
+                        >
+                          [list for sale]
                         </button>
                       )}
                     </>
