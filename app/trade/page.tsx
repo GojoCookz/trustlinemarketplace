@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@/components/WalletProvider";
+import PriceChart from "@/components/PriceChart";
+import DexScreenerEmbed from "@/components/DexScreenerEmbed";
 
 type LaunchRow = {
   id: string;
@@ -11,6 +13,7 @@ type LaunchRow = {
   supply: string;
   transfer_rate_pct: number;
   issuer_address: string;
+  currency_hex: string;
 };
 
 type BookRow = { price: number; tokenAmount: number; xrpAmount: number };
@@ -251,6 +254,18 @@ export default function TradePage() {
         </p>
         <p className="text-[10px] text-muted mt-1">best ask price</p>
       </div>
+
+      {/* Price chart — real candles from on-ledger trades; on mainnet the
+          dexscreener embed takes over */}
+      {selected && (
+        <>
+          <DexScreenerEmbed
+            currencyHex={selected.currency_hex}
+            issuerAddress={selected.issuer_address}
+          />
+          <PriceChart launchId={selected.id} ticker={selected.ticker} />
+        </>
+      )}
 
       {/* Order book */}
       <div className="rounded-lg bg-card border border-white/5 p-4 flex flex-col gap-3">
