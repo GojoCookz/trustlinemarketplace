@@ -338,3 +338,26 @@ CREATE TABLE IF NOT EXISTS nft_activity (
 );
 CREATE INDEX IF NOT EXISTS idx_nft_activity_collection ON nft_activity(collection_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_nft_activity_token ON nft_activity(nftoken_id);
+
+-- lp position history: every AMMCreate/AMMDeposit/AMMWithdraw touching our
+-- pools, parsed from validated on-ledger txs. cost basis for pnl/fees math.
+CREATE TABLE IF NOT EXISTS lp_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  launch_id TEXT NOT NULL,
+  tx_hash TEXT NOT NULL UNIQUE,
+  ledger_index INTEGER NOT NULL,
+  account TEXT NOT NULL,               -- the LP's address
+  type TEXT NOT NULL,                  -- create, deposit, withdraw
+  token_amount REAL NOT NULL,          -- absolute token side
+  xrp_drops INTEGER NOT NULL,          -- absolute xrp side
+  price REAL,                          -- xrp per token at event (null if one-sided)
+  executed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lp_events_pos ON lp_events(launch_id, account);
+
+CREATE TABLE IF NOT EXISTS lp_cursors (
+  launch_id TEXT PRIMARY KEY,
+  amm_account TEXT NOT NULL,
+  last_ledger INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT
+);

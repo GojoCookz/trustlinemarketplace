@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { apiSuccess, apiError } from "@/lib/api";
 import { listLaunches } from "@/db/repo/launches";
 import { getClient } from "@/lib/xrpl/client";
+import { indexLpEvents, getPositionPnl } from "@/lib/marketdata";
 
 // live LP positions for one wallet: account_lines against each AMM account.
 // share of pool -> underlying token/xrp amounts, all straight from the ledger.
@@ -62,6 +63,22 @@ export async function GET(req: NextRequest) {
           else tokenBalance = parseFloat((amt as { value: string }).value);
         }
 
+        // backfill/refresh lp history from the ledger, then compute pnl
+        try {
+          await indexLpEvents(launch, amm.account);
+        } catch {
+          // best-effort — pnl falls back to null fields
+        }
+        const priceNow =
+          tokenBalance > 0 ? xrpDrops / 1_000_000 / tokenBalance : null;
+        const currentValueDrops = Math.floor(xrpDrops * share) * 2;
+        const pnl = getPositionPnl(
+          launch.id,
+          address,
+          priceNow,
+          currentValueDrops
+        );
+
         positions.push({
           launchId: launch.id,
           ticker: launch.ticker,
@@ -73,6 +90,7 @@ export async function GET(req: NextRequest) {
           yourTokens: tokenBalance * share,
           yourXrpDrops: Math.floor(xrpDrops * share),
           poolTvlDrops: xrpDrops * 2,
+          pnl,
         });
       } catch {
         // no pool for this launch — skip

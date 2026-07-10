@@ -6,6 +6,17 @@ import { useWallet } from "@/components/WalletProvider";
 import Sparkline from "@/components/Sparkline";
 import { type PoolInfo, xrp, age } from "@/lib/pool-ui";
 
+type PositionPnl = {
+  depositedDrops: number;
+  withdrawnDrops: number;
+  pnlDrops: number | null;
+  pnlPct: number | null;
+  feesEarnedDrops: number | null;
+  impermanentLossDrops: number | null;
+  eventCount: number;
+  approx: boolean;
+};
+
 type Position = {
   launchId: string;
   ticker: string;
@@ -17,6 +28,7 @@ type Position = {
   yourTokens: number;
   yourXrpDrops: number;
   poolTvlDrops: number;
+  pnl?: PositionPnl;
 };
 
 type View = "discover" | "portfolio";
@@ -580,7 +592,7 @@ export default function PoolsPage() {
               </div>
 
               <div className="rounded-lg bg-card border border-white/5 overflow-x-auto">
-                <table className="w-full min-w-[760px] text-xs">
+                <table className="w-full min-w-[1080px] text-xs">
                   <thead>
                     <tr className="border-b border-white/5 text-[10px] text-muted">
                       <th className="text-left font-medium px-3 py-2.5">
@@ -590,13 +602,19 @@ export default function PoolsPage() {
                         your liquidity
                       </th>
                       <th className="text-right font-medium px-3 py-2.5">
-                        lp balance
+                        deposited
+                      </th>
+                      <th className="text-right font-medium px-3 py-2.5">
+                        pnl
+                      </th>
+                      <th className="text-right font-medium px-3 py-2.5">
+                        fees earned
+                      </th>
+                      <th className="text-right font-medium px-3 py-2.5">
+                        impermanent loss
                       </th>
                       <th className="text-right font-medium px-3 py-2.5">
                         pool share
-                      </th>
-                      <th className="text-right font-medium px-3 py-2.5">
-                        pool tvl
                       </th>
                       <th className="text-right font-medium px-3 py-2.5">
                         fee tier
@@ -608,7 +626,7 @@ export default function PoolsPage() {
                     {positionsLoading && (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={9}
                           className="text-center py-10 text-muted"
                         >
                           reading your lp positions from the ledger...
@@ -617,7 +635,7 @@ export default function PoolsPage() {
                     )}
                     {!positionsLoading && positions.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="text-center py-10">
+                        <td colSpan={9} className="text-center py-10">
                           <p className="text-sm text-muted">
                             no positions yet
                           </p>
@@ -627,53 +645,120 @@ export default function PoolsPage() {
                         </td>
                       </tr>
                     )}
-                    {positions.map((pos) => (
-                      <tr
-                        key={pos.launchId}
-                        className="border-b border-white/5 last:border-0 hover:bg-white/[0.03] transition-colors"
-                      >
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-full bg-mint/15 flex items-center justify-center text-[10px] font-bold text-mint">
-                              {pos.ticker[0]}
+                    {positions.map((pos) => {
+                      const pnl = pos.pnl;
+                      const hasPnl = pnl && pnl.pnlDrops !== null;
+                      return (
+                        <tr
+                          key={pos.launchId}
+                          className="border-b border-white/5 last:border-0 hover:bg-white/[0.03] transition-colors"
+                        >
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full bg-mint/15 flex items-center justify-center text-[10px] font-bold text-mint">
+                                {pos.ticker[0]}
+                              </div>
+                              <span className="font-semibold text-foreground">
+                                {pos.ticker}-XRP
+                              </span>
                             </div>
-                            <span className="font-semibold text-foreground">
-                              {pos.ticker}-XRP
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <span className="block text-foreground">
+                              {num(pos.yourTokens)} {pos.ticker.toLowerCase()}
                             </span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <span className="block text-foreground">
-                            {num(pos.yourTokens)} {pos.ticker.toLowerCase()}
-                          </span>
-                          <span className="block text-muted text-[10px]">
-                            {xrp(pos.yourXrpDrops)} xrp
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 text-right text-foreground font-mono">
-                          {num(pos.lpBalance)}
-                        </td>
-                        <td className="px-3 py-3 text-right text-mint font-semibold">
-                          {pos.sharePct.toFixed(2)}%
-                        </td>
-                        <td className="px-3 py-3 text-right text-foreground">
-                          {xrp(pos.poolTvlDrops)} xrp
-                        </td>
-                        <td className="px-3 py-3 text-right text-muted">
-                          {(pos.tradingFee / 1000).toFixed(2)}%
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <button
-                            onClick={() =>
-                              router.push(`/pools/${pos.launchId}`)
-                            }
-                            className="text-mint hover:text-mint/70 text-[10px] font-medium"
-                          >
-                            [manage →]
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                            <span className="block text-muted text-[10px]">
+                              {xrp(pos.yourXrpDrops)} xrp ·{" "}
+                              {xrp(pos.yourXrpDrops * 2)} xrp total
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-right text-foreground">
+                            {hasPnl ? `${xrp(pnl.depositedDrops)} xrp` : "--"}
+                            {hasPnl && pnl.withdrawnDrops > 0 && (
+                              <span className="block text-[10px] text-muted">
+                                −{xrp(pnl.withdrawnDrops)} withdrawn
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            {hasPnl ? (
+                              <>
+                                <span
+                                  className={`font-semibold ${
+                                    (pnl.pnlDrops ?? 0) >= 0
+                                      ? "text-mint"
+                                      : "text-red-400"
+                                  }`}
+                                >
+                                  {(pnl.pnlDrops ?? 0) >= 0 ? "+" : ""}
+                                  {xrp(pnl.pnlDrops)} xrp
+                                </span>
+                                {pnl.pnlPct !== null && (
+                                  <span
+                                    className={`block text-[10px] ${
+                                      pnl.pnlPct >= 0
+                                        ? "text-mint/70"
+                                        : "text-red-400/70"
+                                    }`}
+                                  >
+                                    {pnl.pnlPct >= 0 ? "+" : ""}
+                                    {pnl.pnlPct.toFixed(2)}%
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-muted">--</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            {hasPnl && pnl.feesEarnedDrops !== null ? (
+                              <span className="text-mint">
+                                +{xrp(Math.max(0, pnl.feesEarnedDrops))} xrp
+                                {pnl.approx && (
+                                  <span className="text-muted text-[9px]">
+                                    {" "}
+                                    ~
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-muted">--</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            {hasPnl && pnl.impermanentLossDrops !== null ? (
+                              <span
+                                className={
+                                  pnl.impermanentLossDrops >= 0
+                                    ? "text-muted"
+                                    : "text-amber-400"
+                                }
+                              >
+                                {xrp(pnl.impermanentLossDrops)} xrp
+                              </span>
+                            ) : (
+                              <span className="text-muted">--</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right text-mint font-semibold">
+                            {pos.sharePct.toFixed(2)}%
+                          </td>
+                          <td className="px-3 py-3 text-right text-muted">
+                            {(pos.tradingFee / 1000).toFixed(2)}%
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <button
+                              onClick={() =>
+                                router.push(`/pools/${pos.launchId}`)
+                              }
+                              className="text-mint hover:text-mint/70 text-[10px] font-medium"
+                            >
+                              [manage →]
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
