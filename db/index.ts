@@ -9,7 +9,14 @@ let db: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (db) return db;
-  const file = process.env.DB_FILE ?? path.join(process.cwd(), "trustline.db");
+  // serverless (vercel) filesystems are read-only except /tmp — the db there
+  // is EPHEMERAL demo state, wiped on cold starts. real deploys need a
+  // durable db (turso/postgres, see MAINNET.md).
+  const file =
+    process.env.DB_FILE ??
+    (process.env.VERCEL
+      ? "/tmp/trustline.db"
+      : path.join(process.cwd(), "trustline.db"));
   db = new Database(file);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");

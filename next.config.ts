@@ -16,6 +16,11 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // every route touches the db, and the db bootstraps from schema.sql —
+  // force it into each serverless function bundle
+  outputFileTracingIncludes: {
+    "/**": ["./db/schema.sql"],
+  },
   async headers() {
     return [
       {
