@@ -69,12 +69,20 @@ export default function NftsPage() {
           </p>
         </div>
         {userId && (
-          <Link
-            href="/nfts/mint"
-            className="px-4 py-2 rounded-lg bg-mint text-[#1b1d28] font-semibold text-sm flex-shrink-0"
-          >
-            [mint]
-          </Link>
+          <div className="flex gap-2 flex-shrink-0">
+            <Link
+              href="/nfts/studio"
+              className="px-4 py-2 rounded-lg bg-card border border-mint/30 text-mint font-semibold text-sm"
+            >
+              [studio]
+            </Link>
+            <Link
+              href="/nfts/mint"
+              className="px-4 py-2 rounded-lg bg-mint text-[#1b1d28] font-semibold text-sm"
+            >
+              [mint]
+            </Link>
+          </div>
         )}
       </header>
 

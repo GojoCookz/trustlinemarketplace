@@ -27,9 +27,32 @@ export default function MintPage() {
 
   const [nftName, setNftName] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function handleFileUpload(file: File | undefined) {
+    if (!file || !userId || uploading) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("userId", userId);
+      const res = await fetch("/api/uploads", { method: "POST", body: form });
+      const json = await res.json();
+      if (json.success) {
+        setImageUrl(`${window.location.origin}${json.data.url}`);
+      } else {
+        setError(json.error ?? "upload failed");
+      }
+    } catch {
+      setError("upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   useEffect(() => {
     if (!address) return;
@@ -213,11 +236,20 @@ export default function MintPage() {
           maxLength={80}
           className="w-full bg-[#1b1d28] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
         />
+        <label className="flex items-center justify-center gap-2 w-full py-3 rounded-lg border border-dashed border-white/15 text-xs text-muted hover:border-mint/30 hover:text-foreground transition-colors cursor-pointer">
+          {uploading ? "uploading..." : "[upload artwork — png, jpg, gif, webp · max 2mb]"}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            onChange={(e) => handleFileUpload(e.target.files?.[0])}
+            className="hidden"
+          />
+        </label>
         <input
           type="url"
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
-          placeholder="image url (stored on-ledger as the nft uri)"
+          placeholder="or paste an image url"
           maxLength={200}
           className="w-full bg-[#1b1d28] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-mint/30"
         />
