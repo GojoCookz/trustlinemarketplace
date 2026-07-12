@@ -29,6 +29,13 @@ export default function MintPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
 
+  // studio hands art off via ?img= (read from location to avoid a
+  // useSearchParams suspense boundary)
+  useEffect(() => {
+    const img = new URLSearchParams(window.location.search).get("img");
+    if (img && img.startsWith(window.location.origin)) setImageUrl(img);
+  }, []);
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

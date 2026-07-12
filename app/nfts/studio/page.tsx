@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/components/WalletProvider";
+import PixelEditor from "@/components/PixelEditor";
 
 type Trait = {
   id: string;
@@ -57,6 +58,11 @@ export default function StudioPage() {
   const [count, setCount] = useState(10);
   const [uploadingLayer, setUploadingLayer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [view, setView] = useState<"generator" | "pixel" | "pro">(
+    "generator"
+  );
+  const [pixelExporting, setPixelExporting] = useState(false);
 
   const [generating, setGenerating] = useState(false);
   const [minted, setMinted] = useState(0);
@@ -252,11 +258,91 @@ export default function StudioPage() {
       <header>
         <h1 className="text-xl font-bold text-mint">[studio]</h1>
         <p className="text-xs text-muted">
-          upload trait layers, set rarity, generate a whole collection, mint
-          it — one stop
+          draw it, layer it, generate it, mint it — one stop
         </p>
       </header>
 
+      {/* Studio tabs */}
+      <div className="flex gap-1 rounded-lg bg-card border border-white/5 p-1 self-start">
+        {(
+          [
+            ["generator", "layer generator"],
+            ["pixel", "pixel editor"],
+            ["pro", "pro editor"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setView(key)}
+            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+              view === key
+                ? "bg-mint text-[#1b1d28]"
+                : "text-muted hover:text-foreground"
+            }`}
+          >
+            [{label}]
+          </button>
+        ))}
+      </div>
+
+      {view === "pixel" && (
+        <>
+          <PixelEditor
+            exporting={pixelExporting}
+            onExport={async (blob) => {
+              if (!userId || pixelExporting) return;
+              setPixelExporting(true);
+              setError(null);
+              try {
+                const form = new FormData();
+                form.append("file", blob, "pixel.png");
+                form.append("userId", userId);
+                const res = await fetch("/api/uploads", {
+                  method: "POST",
+                  body: form,
+                });
+                const json = await res.json();
+                if (json.success) {
+                  router.push(
+                    `/nfts/mint?img=${encodeURIComponent(
+                      `${window.location.origin}${json.data.url}`
+                    )}`
+                  );
+                } else {
+                  setError(json.error ?? "upload failed");
+                }
+              } catch {
+                setError("upload failed");
+              } finally {
+                setPixelExporting(false);
+              }
+            }}
+          />
+          {error && <p className="text-[10px] text-red-400">{error}</p>}
+        </>
+      )}
+
+      {view === "pro" && (
+        <div className="flex flex-col gap-2">
+          {/* photopea is an external free web editor that permits embedding.
+              art made here gets saved locally, then uploaded via the mint
+              page or as generator traits. */}
+          <iframe
+            src="https://www.photopea.com"
+            title="photopea editor"
+            className="w-full rounded-lg border border-white/10"
+            style={{ height: 640 }}
+          />
+          <p className="text-[10px] text-muted/60 text-center">
+            photopea (photoshop-grade, free, runs in your browser — an
+            external service). export your art as png, then mint it or use it
+            as generator traits.
+          </p>
+        </div>
+      )}
+
+      {view === "generator" && (
+        <>
       {/* Layers */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
@@ -507,6 +593,8 @@ export default function StudioPage() {
         tip: traits should be same-size transparent pngs — they stack bottom
         layer up
       </p>
+        </>
+      )}
     </div>
   );
 }
