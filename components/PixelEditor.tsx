@@ -1,8 +1,18 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useWallet } from "@/components/WalletProvider";
 
 type Tool = "pencil" | "eraser" | "fill" | "pick";
+
+type PixelProject = {
+  id: string;
+  name: string;
+  data: { size: number; grid: (string | null)[][] };
+  updatedAt: string;
+};
+
+const AUTOSAVE_KEY = "tl_pixel_autosave";
 
 const PALETTE = [
   "#1b1d28",
@@ -41,6 +51,7 @@ export default function PixelEditor({
   onExport: (blob: Blob) => void;
   exporting: boolean;
 }) {
+  const { userId } = useWallet();
   const [size, setSize] = useState<(typeof SIZES)[number]>(32);
   const [grid, setGrid] = useState<Grid>(() => emptyGrid(32));
   const [color, setColor] = useState(PALETTE[2]);
@@ -49,6 +60,129 @@ export default function PixelEditor({
   const undoStack = useRef<Grid[]>([]);
   const drawing = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const [projects, setProjects] = useState<PixelProject[]>([]);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("untitled");
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  // crash safety: restore the last unsaved drawing on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        size: number;
+        grid: Grid;
+        projectId?: string | null;
+        projectName?: string;
+      };
+      if (SIZES.includes(saved.size as (typeof SIZES)[number])) {
+        setSize(saved.size as (typeof SIZES)[number]);
+        setGrid(saved.grid);
+        if (saved.projectId) setProjectId(saved.projectId);
+        if (saved.projectName) setProjectName(saved.projectName);
+      }
+    } catch {
+      localStorage.removeItem(AUTOSAVE_KEY);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // debounced autosave on every change
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          AUTOSAVE_KEY,
+          JSON.stringify({ size, grid, projectId, projectName })
+        );
+      } catch {
+        // storage full — drawing continues, autosave silently off
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [grid, size, projectId, projectName]);
+
+  const loadProjects = useCallback(() => {
+    if (!userId) return;
+    fetch(`/api/studio/projects?userId=${userId}&kind=pixel`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success) setProjects(res.data);
+      })
+      .catch(() => {});
+  }, [userId]);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  async function saveProject() {
+    if (!userId || saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/studio/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          id: projectId ?? undefined,
+          kind: "pixel",
+          name: projectName || "untitled",
+          data: { size, grid },
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setProjectId(json.data.id);
+        setSavedAt(new Date().toLocaleTimeString());
+        loadProjects();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openProject(p: PixelProject) {
+    if (!SIZES.includes(p.data.size as (typeof SIZES)[number])) return;
+    undoStack.current = [];
+    setSize(p.data.size as (typeof SIZES)[number]);
+    setGrid(p.data.grid);
+    setProjectId(p.id);
+    setProjectName(p.name);
+  }
+
+  // import any png/jpg: downsample onto the current grid size
+  function importImage(file: File | undefined) {
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const off = document.createElement("canvas");
+      off.width = size;
+      off.height = size;
+      const ctx = off.getContext("2d")!;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(img, 0, 0, size, size);
+      const data = ctx.getImageData(0, 0, size, size).data;
+      const next = emptyGrid(size);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const i = (y * size + x) * 4;
+          if (data[i + 3] < 32) continue; // keep transparency
+          const hex = `#${[data[i], data[i + 1], data[i + 2]]
+            .map((v) => v.toString(16).padStart(2, "0"))
+            .join("")}`;
+          next[y][x] = hex;
+        }
+      }
+      pushUndo();
+      setGrid(next);
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  }
 
   const render = useCallback(() => {
     const canvas = canvasRef.current;
@@ -219,6 +353,53 @@ export default function PixelEditor({
 
       {/* controls */}
       <div className="flex flex-col gap-3">
+        {/* project bar: name, save, open, import */}
+        <div className="flex gap-1.5 flex-wrap items-center">
+          <input
+            type="text"
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            maxLength={60}
+            className="flex-1 min-w-[120px] bg-card border border-white/10 rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-mint/30"
+          />
+          <button
+            onClick={saveProject}
+            disabled={!userId || saving}
+            className="px-3 py-1.5 rounded-lg text-xs bg-card border border-mint/30 text-mint disabled:opacity-40"
+          >
+            {saving ? "saving..." : projectId ? "[save]" : "[save project]"}
+          </button>
+          {projects.length > 0 && (
+            <select
+              value=""
+              onChange={(e) => {
+                const p = projects.find((x) => x.id === e.target.value);
+                if (p) openProject(p);
+              }}
+              className="bg-card border border-white/10 rounded-lg px-2 py-1.5 text-xs text-muted focus:outline-none"
+            >
+              <option value="">open…</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <label className="px-3 py-1.5 rounded-lg text-xs bg-card border border-white/10 text-muted hover:text-foreground cursor-pointer">
+            [import png]
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => importImage(e.target.files?.[0])}
+              className="hidden"
+            />
+          </label>
+          {savedAt && (
+            <span className="text-[9px] text-muted/60">saved {savedAt}</span>
+          )}
+        </div>
+
         <div className="flex gap-1.5 flex-wrap">
           {TOOLS.map((t) => (
             <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/components/WalletProvider";
@@ -63,6 +63,126 @@ export default function StudioPage() {
     "generator"
   );
   const [pixelExporting, setPixelExporting] = useState(false);
+
+  type GenProject = {
+    id: string;
+    name: string;
+    data: {
+      layers: Layer[];
+      collectionName: string;
+      royalty: number;
+      count: number;
+    };
+  };
+  const [genProjects, setGenProjects] = useState<GenProject[]>([]);
+  const [genProjectId, setGenProjectId] = useState<string | null>(null);
+  const [genSaving, setGenSaving] = useState(false);
+  const [genSavedAt, setGenSavedAt] = useState<string | null>(null);
+
+  const proFrameRef = useRef<HTMLIFrameElement>(null);
+  const [proPulling, setProPulling] = useState(false);
+  const [proResult, setProResult] = useState<string | null>(null);
+
+  const loadGenProjects = useCallback(() => {
+    if (!userId) return;
+    fetch(`/api/studio/projects?userId=${userId}&kind=generator`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success) setGenProjects(res.data);
+      })
+      .catch(() => {});
+  }, [userId]);
+
+  useEffect(() => {
+    loadGenProjects();
+  }, [loadGenProjects]);
+
+  async function saveGenProject() {
+    if (!userId || genSaving) return;
+    setGenSaving(true);
+    try {
+      const res = await fetch("/api/studio/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          id: genProjectId ?? undefined,
+          kind: "generator",
+          name: collectionName || "untitled collection",
+          data: { layers, collectionName, royalty, count },
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setGenProjectId(json.data.id);
+        setGenSavedAt(new Date().toLocaleTimeString());
+        loadGenProjects();
+      }
+    } finally {
+      setGenSaving(false);
+    }
+  }
+
+  function openGenProject(p: GenProject) {
+    setLayers(p.data.layers);
+    setCollectionName(p.data.collectionName);
+    setRoyalty(p.data.royalty);
+    setCount(p.data.count);
+    setGenProjectId(p.id);
+  }
+
+  // photopea outbound export: post a script, receive the png bytes back
+  async function pullFromPhotopea() {
+    const frame = proFrameRef.current;
+    if (!frame?.contentWindow || !userId || proPulling) return;
+    setProPulling(true);
+    setProResult(null);
+    setError(null);
+
+    const bytes = await new Promise<ArrayBuffer | null>((resolve) => {
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve(null);
+      }, 15_000);
+      function onMsg(e: MessageEvent) {
+        if (e.source !== frame!.contentWindow) return;
+        if (e.data instanceof ArrayBuffer) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(e.data);
+        }
+      }
+      window.addEventListener("message", onMsg);
+      frame!.contentWindow!.postMessage(
+        'app.activeDocument.saveToOE("png");',
+        "*"
+      );
+    });
+
+    if (!bytes) {
+      setError(
+        "nothing came back — open or create a document in photopea first"
+      );
+      setProPulling(false);
+      return;
+    }
+
+    try {
+      const form = new FormData();
+      form.append("file", new Blob([bytes], { type: "image/png" }), "pro.png");
+      form.append("userId", userId);
+      const up = await fetch("/api/uploads", {
+        method: "POST",
+        body: form,
+      }).then((r) => r.json());
+      if (up.success) setProResult(up.data.url);
+      else setError(up.error ?? "upload failed");
+    } catch {
+      setError("upload failed");
+    } finally {
+      setProPulling(false);
+    }
+  }
 
   const [generating, setGenerating] = useState(false);
   const [minted, setMinted] = useState(0);
@@ -324,19 +444,53 @@ export default function StudioPage() {
 
       {view === "pro" && (
         <div className="flex flex-col gap-2">
-          {/* photopea is an external free web editor that permits embedding.
-              art made here gets saved locally, then uploaded via the mint
-              page or as generator traits. */}
+          {/* photopea is an external free web editor that permits embedding
+              and exposes a postMessage export api */}
           <iframe
+            ref={proFrameRef}
             src="https://www.photopea.com"
             title="photopea editor"
             className="w-full rounded-lg border border-white/10"
             style={{ height: 640 }}
           />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={pullFromPhotopea}
+              disabled={proPulling || !userId}
+              className="px-4 py-2 rounded-lg bg-mint text-[#1b1d28] text-xs font-semibold disabled:opacity-40"
+            >
+              {proPulling
+                ? "pulling artwork..."
+                : "[pull artwork into trustline]"}
+            </button>
+            {proResult && (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={proResult}
+                  alt="pulled artwork"
+                  className="w-9 h-9 rounded-md border border-mint/30 object-cover"
+                />
+                <button
+                  onClick={() =>
+                    router.push(
+                      `/nfts/mint?img=${encodeURIComponent(
+                        `${window.location.origin}${proResult}`
+                      )}`
+                    )
+                  }
+                  className="text-xs text-mint font-semibold"
+                >
+                  [mint it →]
+                </button>
+              </>
+            )}
+            {error && <p className="text-[10px] text-red-400">{error}</p>}
+          </div>
           <p className="text-[10px] text-muted/60 text-center">
             photopea (photoshop-grade, free, runs in your browser — an
-            external service). export your art as png, then mint it or use it
-            as generator traits.
+            external service). draw, then one click pulls your canvas
+            straight into trustline.
           </p>
         </div>
       )}
@@ -345,21 +499,56 @@ export default function StudioPage() {
         <>
       {/* Layers */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <h2 className="text-sm font-semibold text-muted">
             layers (bottom first)
           </h2>
-          <button
-            onClick={() =>
-              setLayers((p) => [
-                ...p,
-                { id: uid(), name: `layer ${p.length + 1}`, traits: [] },
-              ])
-            }
-            className="text-xs text-mint"
-          >
-            [+ add layer]
-          </button>
+          <div className="flex items-center gap-2">
+            {genSavedAt && (
+              <span className="text-[9px] text-muted/60">
+                saved {genSavedAt}
+              </span>
+            )}
+            <button
+              onClick={saveGenProject}
+              disabled={!userId || genSaving}
+              className="text-xs text-mint disabled:opacity-40"
+            >
+              {genSaving
+                ? "saving..."
+                : genProjectId
+                  ? "[save]"
+                  : "[save project]"}
+            </button>
+            {genProjects.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => {
+                  const p = genProjects.find((x) => x.id === e.target.value);
+                  if (p) openGenProject(p);
+                }}
+                className="bg-card border border-white/10 rounded px-2 py-1 text-[10px] text-muted focus:outline-none"
+              >
+                <option value="">open…</option>
+                {genProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={() =>
+                setLayers((p) => [
+                  ...p,
+                  { id: uid(), name: `layer ${p.length + 1}`, traits: [] },
+                ])
+              }
+              className="text-xs text-mint"
+            >
+              [+ add layer]
+            </button>
+          </div>
         </div>
 
         {layers.map((layer, idx) => (

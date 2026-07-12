@@ -380,3 +380,15 @@ CREATE TABLE IF NOT EXISTS comment_votes (
   vote INTEGER NOT NULL,               -- 1 or -1
   PRIMARY KEY (comment_id, user_id)
 );
+
+-- studio projects: reopenable work (pixel grids, generator configs).
+-- data is a json blob; trait/image files live in uploads and are referenced.
+CREATE TABLE IF NOT EXISTS studio_projects (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL,                  -- pixel, generator
+  name TEXT NOT NULL,
+  data TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_studio_projects_user ON studio_projects(user_id, kind);
