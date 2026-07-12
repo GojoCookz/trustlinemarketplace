@@ -361,3 +361,22 @@ CREATE TABLE IF NOT EXISTS lp_cursors (
   last_ledger INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT
 );
+
+-- community layer: reddit-style threads on listings, tokens, collections
+CREATE TABLE IF NOT EXISTS comments (
+  id TEXT PRIMARY KEY,
+  subject_type TEXT NOT NULL,          -- listing, launch, collection
+  subject_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  parent_id TEXT,                      -- null = top-level
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_comments_subject ON comments(subject_type, subject_id);
+
+CREATE TABLE IF NOT EXISTS comment_votes (
+  comment_id TEXT NOT NULL REFERENCES comments(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  vote INTEGER NOT NULL,               -- 1 or -1
+  PRIMARY KEY (comment_id, user_id)
+);

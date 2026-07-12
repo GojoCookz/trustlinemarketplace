@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useWallet } from "@/components/WalletProvider";
 import PriceChart from "@/components/PriceChart";
 import DexScreenerEmbed from "@/components/DexScreenerEmbed";
+import CommentThread from "@/components/CommentThread";
 
 type LaunchRow = {
   id: string;
@@ -456,6 +457,11 @@ export default function TradePage() {
           <p className="text-[10px] text-red-400 text-center">{error}</p>
         )}
       </div>
+
+      {/* token talk — pump.fun style thread per token */}
+      {selected && (
+        <CommentThread subjectType="launch" subjectId={selected.id} />
+      )}
 
       <div className="rounded-lg bg-white/5 p-3 flex justify-between text-xs">
         <span className="text-muted">platform fees</span>

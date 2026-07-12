@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@/components/WalletProvider";
 import MessageThread from "@/components/MessageThread";
+import CommentThread from "@/components/CommentThread";
 
 const CATEGORIES = ["all", "digital", "physical", "services", "tokens"] as const;
 type Category = (typeof CATEGORIES)[number];
@@ -511,6 +512,8 @@ function ListingDetail({
           ))}
         </div>
       )}
+
+      <CommentThread subjectType="listing" subjectId={listing.id} />
     </div>
   );
 }

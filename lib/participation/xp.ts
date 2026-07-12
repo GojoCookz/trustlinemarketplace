@@ -12,6 +12,7 @@ export const XP_RULES = {
   FIRST_POOL: 75,
   FIRST_NFT_OFFER: 25,
   FIRST_NFT_MINT: 50,
+  FIRST_COMMENT: 15,
 } as const;
 
 export const STREAK_MULTIPLIERS: Record<number, number> = {

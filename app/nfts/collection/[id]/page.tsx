@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import { useWallet } from "@/components/WalletProvider";
+import CommentThread from "@/components/CommentThread";
 
 type Item = {
   nftokenId: string;
@@ -642,6 +643,8 @@ export default function CollectionPage({
           ))}
         </div>
       )}
+
+      <CommentThread subjectType="collection" subjectId={data.id} />
 
       <p className="text-[10px] text-muted/50 text-center">
         live — every stat derives from on-ledger transactions
